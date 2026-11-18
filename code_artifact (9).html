@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Mobile Chrome Dino Game</title>
+  <style>
+    /* 레트로 도트 감성을 위한 폰트 및 기본 초기화 */
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #FAFAFA;
+      overflow: hidden;
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    /* 전체 모바일 세로 레이아웃 컨테이너 */
+    .app-wrapper {
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      background-color: #FAFAFA;
+    }
+
+    /* 상단 약 41.5% 파란색 게임 영역 (첨부 이미지 정확 반영) */
+    #game-zone {
+      position: relative;
+      width: 100%;
+      height: 41.5%;
+      min-height: 220px;
+      background-color: #5B82AB;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+      overflow: hidden;
+      touch-action: none; /* 브라우저 기본 제스처 방지 (게임 영역 내부 전용) */
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(91, 130, 171, 0.15);
+    }
+
+    /* 게임 캔버스 */
+    #game-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 우측 상단 점수판 (HI + 현재 점수) */
+    .hud-score {
+      position: absolute;
+      top: 16px;
+      right: 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      letter-spacing: 1px;
+      color: #F4F7FA;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .hud-hi {
+      color: rgba(244, 247, 250, 0.72);
+    }
+
+    .score-blink {
+      animation: blinkAnim 0.25s step-end 4;
+    }
+
+    @keyframes blinkAnim {
+      50% { opacity: 0; }
+    }
+
+    /* 좌측 상단 사운드 토글 버튼 (게임 영역 내부) */
+    #sound-btn {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1.5px solid rgba(244, 247, 250, 0.35);
+      background: rgba(255, 255, 255, 0.1);
+      color: #F4F7FA;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #sound-btn:active {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* 시작 대기 및 게임 오버 오버레이 (파란 영역 내부 중앙 배치) */
+    .overlay-ui {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 15;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .title-text {
+      color: #F4F7FA;
+      font-size: 14px;
+      line-height: 1.6;
+      text-shadow: 0 2px 0 rgba(40, 62, 86, 0.35);
+      margin-bottom: 8px;
+    }
+
+    .sub-hint {
+      color: rgba(244, 247, 250, 0.85);
+      font-size: 9px;
+      line-height: 1.6;
+    }
+
+    .gameover-text {
+      color: #F4F7FA;
+      font-size: 17px;
+      letter-spacing: 3px;
+      margin-bottom: 14px;
+      text-shadow: 0 2px 0 rgba(40, 62, 86, 0.4);
+    }
+
+    .restart-icon {
+      width: 44px;
+      height: 40px;
+      background: #F4F7FA;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 3px 0 #3E5D7E;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* 하단 약 58.5% 비활성 흰색 영역 */
+    #inactive-zone {
+      flex: 1;
+      width: 100%;
+      background-color: #FAFAFA;
+      /* 어떠한 이벤트도 바인딩하지 않는 순수 여백 */
+    }
+  </style>
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- 상단 파란색 게임 영역 (오직 이 영역 내부의 터치/클릭만 게임 입력으로 처리) -->
+    <div id="game-zone" role="application" aria-label="크롬 공룡 게임 영역">
+      <!-- 음소거 토글 버튼 -->
+      <button id="sound-btn" type="button" aria-label="효과음 켜기/끄기">
+        <svg id="icon-sound-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+        </svg>
+        <svg id="icon-sound-off" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>
+        </svg>
+      </button>
+
+      <!-- 점수 표시 HUD -->
+      <div class="hud-score">
+        <span class="hud-hi" id="hi-score">HI 00000</span>
+        <span id="curr-score">00000</span>
+      </div>
+
+      <!-- 시작 대기 안내 UI -->
+      <div id="start-overlay" class="overlay-ui">
+        <div class="title-text">TAP TO START</div>
+        <div class="sub-hint">터치: 점프 · 아래 스와이프: 숙이기</div>
+      </div>
+
+      <!-- 게임 오버 UI -->
+      <div id="gameover-overlay" class="overlay-ui hidden">
+        <div class="gameover-text">GAME OVER</div>
+        <div class="restart-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="#5B82AB">
+            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- 픽셀 아트 렌더링 캔버스 -->
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- 하단 흰색 비활성 영역 (터치 및 클릭 전혀 반응하지 않음) -->
+    <div id="inactive-zone"></div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // ==========================================
+      // 1. DOM 요소 및 상태 초기화
+      // ==========================================
+      const gameZone = document.getElementById('game-zone');
+      const canvas = document.getElementById('game-canvas');
+      const ctx = canvas.getContext('2d');
+
+      const hiScoreEl = document.getElementById('hi-score');
+      const currScoreEl = document.getElementById('curr-score');
+      const startOverlay = document.getElementById('start-overlay');
+      const gameoverOverlay = document.getElementById('gameover-overlay');
+      const soundBtn = document.getElementById('sound-btn');
+      const iconSoundOn = document.getElementById('icon-sound-on');
+      const iconSoundOff = document.getElementById('icon-sound-off');
+
+      // 색상 팔레트 (슬레이트 블루 배경에 최적화된 고대비 픽셀 컬러)
+      const COLORS = {
+        bg: '#5B82AB',
+        primary: '#F4F7FA',      // 공룡, 장애물, 지면 메인 색상
+        secondary: '#D4E1EE',    // 구름 및 보조 디테일
+        shadow: '#3E5E80'        // 입체감 그림자
+      };
+
+      // 게임 상태 상수
+      const STATE = {
+        READY: 'READY',
+        PLAYING: 'PLAYING',
+        GAMEOVER: 'GAMEOVER'
+      };
+
+      let gameState = STATE.READY;
+      let width = 0;
+      let height = 0;
+      let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      // 물리 및 속도 파라미터
+      let groundY = 0;
+      let baseSpeed = 310;       // 초당 픽셀 이동 속도
+      let currentSpeed = 310;
+      const MAX_SPEED = 780;
+      const GRAVITY = 2150;
+      const JUMP_VELOCITY = -690;
+      const FAST_DROP_GRAVITY = 4800;
+
+      // 점수 관리
+      let distanceScore = 0;
+      let displayScore = 0;
+      let highScore = 0;
+      let lastMilestone = 0;
+
+      try {
+        highScore = parseInt(localStorage.getItem('chrome_dino_hi_blue') || '0', 10) || 0;
+      } catch (e) {
+        highScore = 0;
+      }
+
+      // ==========================================
+      // 2. Web Audio API 레트로 8비트 사운드 엔진
+      // ==========================================
+      let audioCtx = null;
+      let isMuted = false;
+
+      function initAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+      }
+
+      function playTone(freqStart, freqEnd, duration, type = 'square', gainVal = 0.08, delay = 0) {
+        if (isMuted) return;
+        initAudio();
+        if (!audioCtx) return;
+
+        const now = audioCtx.currentTime + delay;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = type;
+        osc.frequency.setValueAtTime(freqStart, now);
+        if (freqEnd !== freqStart) {
+          osc.frequency.exponentialRampToValueAtTime(freqEnd, now + duration);
+        }
+
+        gain.gain.setValueAtTime(gainVal, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(now);
+        osc.stop(now + duration);
+      }
+
+      const SFX = {
+        jump() {
+          playTone(340, 680, 0.11, 'square', 0.07);
+        },
+        score() {
+          playTone(587.33, 587.33, 0.08, 'square', 0.07, 0);
+          playTone(880, 880, 0.16, 'square', 0.07, 0.08);
+        },
+        hit() {
+          playTone(180, 65, 0.22, 'sawtooth', 0.1);
+        }
+      };
+
+      // 음소거 버튼 이벤트 (게임 영역 내부 버튼이므로 전파 차단)
+      soundBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        isMuted = !isMuted;
+        iconSoundOn.classList.toggle('hidden', isMuted);
+        iconSoundOff.classList.toggle('hidden', !isMuted);
+        if (!isMuted) {
+          initAudio();
+          playTone(520, 660, 0.07, 'square', 0.05);
+        }
+      });
+
+      // ==========================================
+      // 3. 픽셀 스프라이트 데이터 (16진수/문자열 그리드)
+      // ==========================================
+      // '1' = 메인 밝은 픽셀(#F4F7FA), '2' = 눈/어두운 디테일(#5B82AB)
+      const SPRITES = {
+        dinoStand: [
+          "          11111111  ",
+          "         1112111111 ",
+          "         1111111111 ",
+          "         1111111111 ",
+          "         1111111111 ",
+          "         111111     ",
+          "         111111111  ",
+          "1       111111      ",
+          "1      1111111      ",
+          "11    1111111111    ",
+          "111  111111111 1    ",
+          "11111111111111      ",
+          " 1111111111111      ",
+          "  11111111111       ",
+          "   111111111        ",
+          "    111  111        ",
+          "    11    11        ",
+          "    11    11        ",
+          "    111   111       "
+        ],
+        dinoRun1: [
+          "          11111111  ",
+          "         1112111111 ",
+          "         1111111111 ",
+          "         1111111111 ",
+          "         1111111111 ",
+          "         111111     ",
+          "         111111111  ",
+          "1       111111      ",
+          "1      1111111      ",
+          "11    1111111111    ",
+          "111  111111111 1    ",
+          "11111111111111      ",
+          " 1111111111111      ",
+          "  11111111111       ",
+          "   111111111        ",
+          "    111  111        ",
+          "    11    111       ",
+          "    111             ",
+          "                    "
+        ],
+        dinoRun2: [
+          "          11111111  ",
+          "         1112111111 ",
+          "         1111111111 ",
+          "         1111111111 ",
+          "         1111111111 ",
+          "         111111     ",
+          "         111111111  ",
+          "1       111111      ",
+          "1      1111111      ",
+          "11    1111111111    ",
+          "111  111111111 1    ",
+          "11111111111111      ",
+          " 1111111111111      ",
+          "  11111111111       ",
+          "   111111111        ",
+          "    111  111        ",
+          "     111  11        ",
+          "          111       ",
+          "                    "
+        ],
+        dinoDead: [
+          "          11111111  ",
+          "         1222111111 ",
+          "         1212111111 ",
+          "         1222111111 ",
+          "         1111111111 ",
+          "         111111     ",
+          "         11111111   ",
+          "1       111111      ",
+          "1      1111111      ",
+          "11    1111111111    ",
+          "111  111111111 1    ",
+          "11111111111111      ",
+          " 1111111111111      ",
+          "  11111111111       ",
+          "   111111111        ",
+          "    111  111        ",
+          "    11    11        ",
+          "    11    11        ",
+          "    111   111       "
+        ],
+        dinoDuck1: [
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "1                 11111111  ",
+          "11              11112111111 ",
+          "1111  111111111111111111111 ",
+          "111111111111111111111111111 ",
+          " 1111111111111111111111     ",
+          "  111111111111111111111111  ",
+          "    1111111111111111        ",
+          "     111   111   11         ",
+          "     11     111  1          ",
+          "     111                    "
+        ],
+        dinoDuck2: [
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "1                 11111111  ",
+          "11              11112111111 ",
+          "1111  111111111111111111111 ",
+          "111111111111111111111111111 ",
+          " 1111111111111111111111     ",
+          "  111111111111111111111111  ",
+          "    1111111111111111        ",
+          "     111   111   11         ",
+          "      111   11   1          ",
+          "            111             "
+        ],
+        cactusSmall: [
+          "    11    ",
+          "   1111   ",
+          "   1111   ",
+          "1  1111  1",
+          "11 1111 11",
+          "11 1111 11",
+          "1111111111",
+          " 11111111 ",
+          "   1111   ",
+          "   1111   ",
+          "   1111   ",
+          "   1111   ",
+          "   1111   "
+        ],
+        cactusLarge: [
+          "     111     ",
+          "    11111    ",
+          "    11111    ",
+          "11  11111  11",
+          "111 11111 111",
+          "111 11111 111",
+          "111 11111 111",
+          "1111111111111",
+          " 11111111111 ",
+          "    11111    ",
+          "    11111    ",
+          "    11111    ",
+          "    11111    ",
+          "    11111    ",
+          "    11111    ",
+          "    11111    ",
+          "    11111    "
+        ],
+        ptero1: [
+          "      11            ",
+          "     1111           ",
+          "    111111          ",
+          "   11111111         ",
+          "1111111111111111    ",
+          " 111111111111111111 ",
+          "   111111111111111  ",
+          "     111111111      ",
+          "       1111         "
+        ],
+        ptero2: [
+          "                    ",
+          "                    ",
+          "                    ",
+          "                    ",
+          "1111111111111111    ",
+          " 111111111111111111 ",
+          "   111111111111111  ",
+          "     111111111      ",
+          "      111111        ",
+          "       1111         ",
+          "        11          "
+        ]
+      };
+
+      function drawSprite(sprite, x, y, pixelSize) {
+        const rows = sprite.length;
+        for (let r = 0; r < rows; r++) {
+          const rowStr = sprite[r];
+          for (let c = 0; c < rowStr.length; c++) {
+            const ch = rowStr[c];
+            if (ch === '1') {
+              ctx.fillStyle = COLORS.primary;
+              ctx.fillRect(
+                Math.round(x + c * pixelSize),
+                Math.round(y + r * pixelSize),
+                Math.ceil(pixelSize),
+                Math.ceil(pixelSize)
+              );
+            } else if (ch === '2') {
+              ctx.fillStyle = COLORS.bg;
+              ctx.fillRect(
+                Math.round(x + c * pixelSize),
+                Math.round(y + r * pixelSize),
+                Math.ceil(pixelSize),
+                Math.ceil(pixelSize)
+              );
+            }
+          }
+        }
+      }
+
+      // ==========================================
+      // 4. 게임 엔티티 (공룡, 장애물, 구름, 지면)
+      // ==========================================
+      const dino = {
+        x: 36,
+        y: 0,
+        vy: 0,
+        pixelSize: 2.3,
+        isGrounded: true,
+        isDucking: false,
+        animTimer: 0,
+        animFrame: 0,
+
+        get width() {
+          return (this.isDucking ? 28 : 20) * this.pixelSize;
+        },
+        get height() {
+          return (this.isDucking ? 17 : 19) * this.pixelSize;
+        },
+
+        reset() {
+          this.y = groundY - 19 * this.pixelSize;
+          this.vy = 0;
+          this.isGrounded = true;
+          this.isDucking = false;
+          this.animTimer = 0;
+          this.animFrame = 0;
+        },
+
+        jump() {
+          if (this.isGrounded) {
+            this.vy = JUMP_VELOCITY;
+            this.isGrounded = false;
+            this.isDucking = false;
+            SFX.jump();
+          }
+        },
+
+        setDuck(duck) {
+          this.isDucking = duck;
+        },
+
+        update(dt) {
+          if (!this.isGrounded) {
+            const grav = this.isDucking ? FAST_DROP_GRAVITY : GRAVITY;
+            this.vy += grav * dt;
+            this.y += this.vy * dt;
+
+            const floorY = groundY - 19 * this.pixelSize;
+            if (this.y >= floorY) {
+              this.y = floorY;
+              this.vy = 0;
+              this.isGrounded = true;
+            }
+          }
+
+          // 달리기 다리 교차 애니메이션
+          if (this.isGrounded && gameState === STATE.PLAYING) {
+            this.animTimer += dt;
+            const interval = Math.max(0.065, 0.11 - (currentSpeed - baseSpeed) * 0.00008);
+            if (this.animTimer >= interval) {
+              this.animTimer = 0;
+              this.animFrame = this.animFrame === 0 ? 1 : 0;
+            }
+          }
+        },
+
+        draw() {
+          let sprite = SPRITES.dinoStand;
+          let drawY = this.y;
+
+          if (gameState === STATE.GAMEOVER) {
+            sprite = SPRITES.dinoDead;
+            drawY = this.y;
+          } else if (!this.isGrounded) {
+            sprite = SPRITES.dinoStand;
+          } else if (this.isDucking) {
+            sprite = this.animFrame === 0 ? SPRITES.dinoDuck1 : SPRITES.dinoDuck2;
+            drawY = groundY - 17 * this.pixelSize;
+          } else if (gameState === STATE.PLAYING) {
+            sprite = this.animFrame === 0 ? SPRITES.dinoRun1 : SPRITES.dinoRun2;
+          }
+
+          drawSprite(sprite, this.x, drawY, this.pixelSize);
+        },
+
+        // 공정한 판정을 위한 히트박스 축소(Padding 적용)
+        getHitbox() {
+          const padX = 7;
+          const padY = 5;
+          if (this.isGrounded && this.isDucking) {
+            const h = 10 * this.pixelSize;
+            return {
+              x: this.x + padX,
+              y: groundY - h + 2,
+              w: 28 * this.pixelSize - padX * 2,
+              h: h - 4
+            };
+          }
+          return {
+            x: this.x + padX,
+            y: this.y + padY,
+            w: 18 * this.pixelSize - padX * 1.6,
+            h: 19 * this.pixelSize - padY * 1.5
+          };
+        }
+      };
+
+      let obstacles = [];
+      let obstacleSpawnTimer = 0;
+      let clouds = [];
+      let groundBumps = [];
+
+      function initEnvironment() {
+        clouds = [];
+        for (let i = 0; i < 4; i++) {
+          clouds.push({
+            x: (width / 3) * i + Math.random() * 60,
+            y: 26 + Math.random() * (groundY * 0.42),
+            speedFactor: 0.16 + Math.random() * 0.08,
+            scale: 0.85 + Math.random() * 0.35
+          });
+        }
+
+        groundBumps = [];
+        for (let i = 0; i < 24; i++) {
+          groundBumps.push({
+            x: Math.random() * width,
+            yOffset: 4 + Math.random() * 9,
+            w: 2 + Math.floor(Math.random() * 5)
+          });
+        }
+      }
+
+      function spawnObstacle() {
+        const canSpawnPtero = displayScore >= 180;
+        const roll = Math.random();
+
+        if (canSpawnPtero && roll < 0.24) {
+          // 익룡 (높이 2단계: 점프 회피 높이 / 숙이기 회피 높이)
+          const highAltitude = Math.random() < 0.55;
+          const pSize = 2.1;
+          const pHeight = 11 * pSize;
+          const offsetFromGround = highAltitude ? 34 : 12;
+
+          obstacles.push({
+            type: 'ptero',
+            x: width + 20,
+            y: groundY - pHeight - offsetFromGround,
+            pixelSize: pSize,
+            animTimer: 0,
+            animFrame: 0
+          });
+        } else {
+          // 선인장 (소형, 대형, 2~3개 군집)
+          const isLarge = Math.random() < 0.45;
+          const count = currentSpeed > 430 && Math.random() < 0.38 ? 3 : (Math.random() < 0.45 ? 2 : 1);
+          const pSize = isLarge ? 2.2 : 2.1;
+          const sprite = isLarge ? SPRITES.cactusLarge : SPRITES.cactusSmall;
+          const singleW = sprite[0].length * pSize;
+          const singleH = sprite.length * pSize;
+
+          for (let i = 0; i < count; i++) {
+            obstacles.push({
+              type: isLarge ? 'cactusLarge' : 'cactusSmall',
+              x: width + 20 + i * (singleW + 3),
+              y: groundY - singleH,
+              pixelSize: pSize,
+              sprite: sprite
+            });
+          }
+        }
+      }
+
+      function checkCollision(a, b) {
+        return (
+          a.x < b.x + b.w &&
+          a.x + a.w > b.x &&
+          a.y < b.y + b.h &&
+          a.y + a.h > b.y
+        );
+      }
+
+      // ==========================================
+      // 5. 점수 UI 업데이트
+      // ==========================================
+      function formatScore(num) {
+        return String(Math.floor(num)).padStart(5, '0');
+      }
+
+      function updateScoreUI() {
+        currScoreEl.textContent = formatScore(displayScore);
+        hiScoreEl.textContent = 'HI ' + formatScore(highScore);
+      }
+
+      // ==========================================
+      // 6. 게임 시작 / 재시작 컨트롤
+      // ==========================================
+      function startGame() {
+        initAudio();
+        gameState = STATE.PLAYING;
+        currentSpeed = baseSpeed;
+        distanceScore = 0;
+        displayScore = 0;
+        lastMilestone = 0;
+        obstacles = [];
+        obstacleSpawnTimer = 0.85;
+
+        dino.reset();
+        dino.jump();
+
+        startOverlay.classList.add('hidden');
+        gameoverOverlay.classList.add('hidden');
+        currScoreEl.classList.remove('score-blink');
+        updateScoreUI();
+      }
+
+      function triggerGameOver() {
+        gameState = STATE.GAMEOVER;
+        SFX.hit();
+        gameoverOverlay.classList.remove('hidden');
+
+        if (displayScore > highScore) {
+          highScore = displayScore;
+          try {
+            localStorage.setItem('chrome_dino_hi_blue', String(highScore));
+          } catch (e) {}
+          updateScoreUI();
+        }
+      }
+
+      // ==========================================
+      // 7. 입력 핸들러 (오직 #game-zone 내부 터치/클릭만 바인딩!)
+      //    하단 흰색 영역(#inactive-zone)에는 일절 반응하지 않음
+      // ==========================================
+      let touchStartY = 0;
+      let isTouchActive = false;
+      let gameOverCooldown = 0;
+
+      gameZone.addEventListener('pointerdown', (e) => {
+        // 사운드 버튼 클릭 시 무시
+        if (e.target.closest('#sound-btn')) return;
+        e.preventDefault();
+
+        isTouchActive = true;
+        touchStartY = e.clientY;
+
+        if (gameState === STATE.READY) {
+          startGame();
+        } else if (gameState === STATE.PLAYING) {
+          dino.jump();
+        } else if (gameState === STATE.GAMEOVER) {
+          if (performance.now() - gameOverCooldown > 280) {
+            startGame();
+          }
+        }
+      });
+
+      gameZone.addEventListener('pointermove', (e) => {
+        if (!isTouchActive || gameState !== STATE.PLAYING) return;
+        const deltaY = e.clientY - touchStartY;
+
+        // 게임 영역 내 아래로 스와이프 시 숙이기 / 빠른 하강
+        if (deltaY > 22) {
+          dino.setDuck(true);
+        } else if (deltaY < -15) {
+          dino.setDuck(false);
+          dino.jump();
+        }
+      });
+
+      function endPointerAction() {
+        isTouchActive = false;
+        if (gameState === STATE.PLAYING) {
+          dino.setDuck(false);
+        }
+      }
+
+      gameZone.addEventListener('pointerup', endPointerAction);
+      gameZone.addEventListener('pointercancel', endPointerAction);
+
+      // 데스크톱 테스트용 키보드 보조 (Space / ArrowUp / ArrowDown)
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' || e.code === 'ArrowUp') {
+          e.preventDefault();
+          if (gameState === STATE.READY) {
+            startGame();
+          } else if (gameState === STATE.PLAYING) {
+            dino.jump();
+          } else if (gameState === STATE.GAMEOVER && performance.now() - gameOverCooldown > 280) {
+            startGame();
+          }
+        } else if (e.code === 'ArrowDown') {
+          e.preventDefault();
+          if (gameState === STATE.PLAYING) {
+            dino.setDuck(true);
+          }
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowDown' && gameState === STATE.PLAYING) {
+          dino.setDuck(false);
+        }
+      });
+
+      // ==========================================
+      // 8. 캔버스 리사이즈 및 렌더링 루프
+      // ==========================================
+      function resizeCanvas() {
+        const rect = gameZone.getBoundingClientRect();
+        width = rect.width;
+        height = rect.height;
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // 지면 위치는 파란 게임 영역 하단에서 약 28px 위
+        groundY = Math.max(130, height - 28);
+
+        // 화면 크기에 맞춰 공룡 스케일 미세 조정
+        dino.pixelSize = height < 250 ? 2.0 : 2.3;
+        if (dino.isGrounded) {
+          dino.y = groundY - 19 * dino.pixelSize;
+        }
+      }
+
+      function drawCloud(x, y, scale) {
+        ctx.fillStyle = COLORS.secondary;
+        const p = Math.round(3 * scale);
+        ctx.fillRect(x + p * 3, y, p * 4, p);
+        ctx.fillRect(x + p * 2, y + p, p * 7, p);
+        ctx.fillRect(x, y + p * 2, p * 11, p * 2);
+      }
+
+      function update(dt) {
+        if (gameState !== STATE.PLAYING) return;
+
+        // 속도 점진적 증가
+        currentSpeed = Math.min(MAX_SPEED, currentSpeed + 9.5 * dt);
+
+        // 점수 계산 및 100점 단위 효과음/깜빡임
+        distanceScore += (currentSpeed * dt) * 0.042;
+        const newScore = Math.floor(distanceScore);
+        if (newScore !== displayScore) {
+          displayScore = newScore;
+          updateScoreUI();
+
+          const currentMilestone = Math.floor(displayScore / 100);
+          if (currentMilestone > lastMilestone && displayScore > 0) {
+            lastMilestone = currentMilestone;
+            SFX.score();
+            currScoreEl.classList.remove('score-blink');
+            void currScoreEl.offsetWidth;
+            currScoreEl.classList.add('score-blink');
+          }
+        }
+
+        // 구름 이동
+        for (const c of clouds) {
+          c.x -= currentSpeed * c.speedFactor * dt;
+          if (c.x < -50) {
+            c.x = width + 30 + Math.random() * 60;
+            c.y = 24 + Math.random() * (groundY * 0.42);
+          }
+        }
+
+        // 지면 자갈 스크롤
+        for (const b of groundBumps) {
+          b.x -= currentSpeed * dt;
+          if (b.x < -10) {
+            b.x = width + Math.random() * 20;
+            b.yOffset = 4 + Math.random() * 9;
+          }
+        }
+
+        // 공룡 물리 업데이트
+        dino.update(dt);
+
+        // 장애물 생성 타이머
+        obstacleSpawnTimer -= dt;
+        if (obstacleSpawnTimer <= 0) {
+          spawnObstacle();
+          const minGap = Math.max(0.68, 1.35 - (currentSpeed - baseSpeed) * 0.0014);
+          obstacleSpawnTimer = minGap + Math.random() * 0.65;
+        }
+
+        // 장애물 이동 및 충돌 감지
+        const dinoBox = dino.getHitbox();
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+          const obs = obstacles[i];
+          obs.x -= currentSpeed * dt;
+
+          let obsBox;
+          if (obs.type === 'ptero') {
+            obs.animTimer += dt;
+            if (obs.animTimer >= 0.16) {
+              obs.animTimer = 0;
+              obs.animFrame = obs.animFrame === 0 ? 1 : 0;
+            }
+            const w = 20 * obs.pixelSize;
+            const h = 11 * obs.pixelSize;
+            obsBox = {
+              x: obs.x + 4,
+              y: obs.y + 4,
+              w: w - 8,
+              h: h - 7
+            };
+          } else {
+            const w = obs.sprite[0].length * obs.pixelSize;
+            const h = obs.sprite.length * obs.pixelSize;
+            obsBox = {
+              x: obs.x + 3,
+              y: obs.y + 3,
+              w: w - 6,
+              h: h - 4
+            };
+          }
+
+          if (checkCollision(dinoBox, obsBox)) {
+            gameOverCooldown = performance.now();
+            triggerGameOver();
+            return;
+          }
+
+          if (obs.x < -80) {
+            obstacles.splice(i, 1);
+          }
+        }
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, width, height);
+
+        // 1. 배경 구름
+        for (const c of clouds) {
+          drawCloud(Math.round(c.x), Math.round(c.y), c.scale);
+        }
+
+        // 2. 지면 수평선 및 자갈 디테일
+        ctx.fillStyle = COLORS.primary;
+        ctx.fillRect(0, Math.round(groundY), width, 2);
+
+        for (const b of groundBumps) {
+          ctx.fillRect(Math.round(b.x), Math.round(groundY + b.yOffset), b.w, 2);
+        }
+
+        // 3. 장애물 렌더링
+        for (const obs of obstacles) {
+          if (obs.type === 'ptero') {
+            const pSprite = obs.animFrame === 0 ? SPRITES.ptero1 : SPRITES.ptero2;
+            drawSprite(pSprite, obs.x, obs.y, obs.pixelSize);
+          } else {
+            drawSprite(obs.sprite, obs.x, obs.y, obs.pixelSize);
+          }
+        }
+
+        // 4. 공룡 렌더링
+        dino.draw();
+      }
+
+      let lastTime = 0;
+      function loop(timestamp) {
+        if (!lastTime) lastTime = timestamp;
+        const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+        lastTime = timestamp;
+
+        update(dt);
+        render();
+        requestAnimationFrame(loop);
+      }
+
+      // 초기 실행
+      window.addEventListener('resize', resizeCanvas);
+      window.onload = function () {
+        resizeCanvas();
+        initEnvironment();
+        dino.reset();
+        updateScoreUI();
+        requestAnimationFrame(loop);
+      };
+    })();
+  </script>
+</body>
+</html>
